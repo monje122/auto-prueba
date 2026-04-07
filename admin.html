@@ -462,6 +462,9 @@
         <div class="nav-item" onclick="showSection('recargas', this)">
   <span>💳</span> Recargas
 </div>
+        <div class="nav-item" onclick="showSection('retiros', this)">
+  <span>🏧</span> Retiros
+</div>
         <div class="nav-item" onclick="showSection('promos', this)">
           <span>🏷️</span> Promociones
         </div>
@@ -601,6 +604,11 @@
       <div id="sec-recargas" class="section">
   <h2>💳 Recargas pendientes</h2>
   <div id="listaRecargas"></div>
+</div>
+      <!-- SECCIÓN: retiros PENDIENTES -->
+      <div id="sec-retiros" class="section">
+  <h2>🏧 Retiros pendientes</h2>
+  <div id="listaRetiros"></div>
 </div>
       <!-- SECCIÓN: COMPRAS PENDIENTES -->
       <div id="sec-ventas" class="section">
@@ -813,6 +821,127 @@
     </div>
   `).join('');
 }
+    
+    async function cargarRetirosPendientes() {
+  const contenedor = document.getElementById('listaRetiros');
+  contenedor.innerHTML = 'Cargando...';
+
+  const { data, error } = await supabaseClient
+    .from('retiros_bingo')
+    .select(`
+      id,
+      monto,
+      telefono,
+      cedula_titular,
+      banco,
+      solicitado_en,
+      usuarios_bingo(nombre, cedula)
+    `)
+    .eq('estado', 'pendiente')
+    .order('solicitado_en', { ascending: false });
+
+  if (error) {
+    contenedor.innerHTML = 'Error cargando retiros';
+    return;
+  }
+
+  if (!data.length) {
+    contenedor.innerHTML = 'No hay retiros pendientes';
+    return;
+  }
+
+  contenedor.innerHTML = data.map(r => `
+    <div class="card-recarga">
+      <p><strong>${r.usuarios_bingo?.nombre}</strong></p>
+      <p>Cédula: ${r.usuarios_bingo?.cedula}</p>
+      <p>Monto: ${Number(r.monto).toFixed(2)} Bs</p>
+      <p>Teléfono: ${r.telefono}</p>
+      <p>Banco: ${r.banco}</p>
+
+      <div class="acciones">
+        <button onclick="aprobarRetiro(${r.id})">✅ Aprobar</button>
+        <button onclick="rechazarRetiro(${r.id})">❌ Rechazar</button>
+      </div>
+    </div>
+  `).join('');
+}
+    
+    async function aprobarRetiro(id) {
+  const { data: retiro } = await supabaseClient
+    .from('retiros_bingo')
+    .select('*')
+    .eq('id', id)
+    .single();
+
+  if (!retiro) return;
+
+  if (retiro.estado !== 'pendiente') {
+    alert('Ya procesado');
+    return;
+  }
+
+  const usuarioId = retiro.usuario_id;
+  const monto = Number(retiro.monto);
+
+  const { data: billetera } = await supabaseClient
+    .from('billeteras_bingo')
+    .select('*')
+    .eq('usuario_id', usuarioId)
+    .single();
+
+  const saldoAnterior = Number(billetera.saldo || 0);
+
+  if (saldoAnterior < monto) {
+    alert('Saldo insuficiente en usuario');
+    return;
+  }
+
+  const saldoNuevo = saldoAnterior - monto;
+
+  // actualizar saldo
+  await supabaseClient
+    .from('billeteras_bingo')
+    .update({ saldo: saldoNuevo })
+    .eq('usuario_id', usuarioId);
+
+  // registrar movimiento
+  await supabaseClient
+    .from('billetera_movimientos')
+    .insert([{
+      usuario_id: usuarioId,
+      tipo: 'retiro',
+      monto: -monto,
+      saldo_anterior: saldoAnterior,
+      saldo_nuevo: saldoNuevo,
+      descripcion: 'Retiro aprobado'
+    }]);
+
+  // marcar retiro
+  await supabaseClient
+    .from('retiros_bingo')
+    .update({
+      estado: 'aprobado',
+      procesado_en: new Date().toISOString()
+    })
+    .eq('id', id);
+
+  alert('Retiro aprobado');
+  cargarRetirosPendientes();
+}
+    
+    async function rechazarRetiro(id) {
+  await supabaseClient
+    .from('retiros_bingo')
+    .update({
+      estado: 'rechazado',
+      procesado_en: new Date().toISOString()
+    })
+    .eq('id', id);
+
+  alert('Retiro rechazado');
+  cargarRetirosPendientes();
+}
+    
     async function aprobarRecarga(recargaId) {
 
   // 1. obtener recarga
@@ -938,7 +1067,8 @@
       if (section === 'historial') cargarHistorialGanadores();
       if (section === 'promos') cargarPromociones();
       if (section === 'config') cargarAjustes();
-      if (section === 'recargas') cargarRecargasPendientes(); 
+      if (section === 'recargas') cargarRecargasPendientes();
+      if (section === 'retiros') cargarRetirosPendientes();
     }
 
     async function initAdmin() {
