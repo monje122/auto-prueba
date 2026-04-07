@@ -232,7 +232,7 @@
     }
   </style>
 </head>
-<body>
+
 
 <body>
   <div class="container">
@@ -267,43 +267,101 @@
         </div>
       </div>
     </div>
+ <div class="card">
+  <h2>⚡ Acciones rápidas</h2>
 
-    <div class="card">
-      <h2>💳 Solicitar recarga</h2>
+  <div class="actions">
+    <button class="btn-principal" onclick="mostrarSeccion('recarga')">
+      💳 Recargar saldo
+    </button>
 
-      <div class="form-grid">
-        <div class="input-group">
-          <label for="montoRecarga">Monto en Bs</label>
-          <input type="number" id="montoRecarga" placeholder="Ej: 10.00" min="1" step="0.01">
-        </div>
+    <button class="btn-secundario" onclick="mostrarSeccion('retiro')">
+      🏧 Solicitar retiro
+    </button>
 
-        <div class="input-group">
-          <label for="referenciaRecarga">Últimos 4 dígitos de referencia</label>
-          <input type="text" id="referenciaRecarga" placeholder="Ej: 1234" maxlength="4">
-        </div>
+    <button class="btn-secundario" onclick="mostrarSeccion('movimientos')">
+      📜 Ver movimientos
+    </button>
 
-        <div class="input-group">
-          <label for="comprobanteRecarga">Comprobante de pago</label>
-          <div class="file-box">
-            <input type="file" id="comprobanteRecarga" accept="image/*">
-          </div>
-        </div>
-      </div>
+    <button class="btn-secundario" onclick="window.location.href='comprar-cartones.html'">
+      🎫 Comprar cartones
+    </button>
 
-      <div class="actions">
-        <button id="btnEnviarRecarga" class="btn-principal" onclick="solicitarRecarga()">
-          Enviar recarga
-        </button>
+    <button class="btn-secundario" onclick="cerrarSesion()">
+      Cerrar sesión
+    </button>
+  </div>
+</div>
 
-        <button class="btn-secundario" onclick="cerrarSesion()">
-          Cerrar sesión
-        </button>
-      </div>
+<div class="card" id="seccionRecarga">
+  <h2>💳 Solicitar recarga</h2>
 
-      <p id="mensajeRecarga" class="mensaje-recarga"></p>
+  <div class="form-grid">
+    <div class="input-group">
+      <label for="montoRecarga">Monto en Bs</label>
+      <input type="number" id="montoRecarga" placeholder="Ej: 10.00" min="1" step="0.01">
     </div>
 
+    <div class="input-group">
+      <label for="referenciaRecarga">Últimos 4 dígitos de referencia</label>
+      <input type="text" id="referenciaRecarga" placeholder="Ej: 1234" maxlength="4">
+    </div>
+
+    <div class="input-group">
+      <label for="comprobanteRecarga">Comprobante de pago</label>
+      <div class="file-box">
+        <input type="file" id="comprobanteRecarga" accept="image/*">
+      </div>
+    </div>
   </div>
+
+  <div class="actions">
+    <button id="btnEnviarRecarga" class="btn-principal" onclick="solicitarRecarga()">
+      Enviar recarga
+    </button>
+  </div>
+
+  <p id="mensajeRecarga" class="mensaje-recarga"></p>
+</div>
+
+<div class="card" id="seccionRetiro" style="display: none;">
+  <h2>🏧 Solicitar retiro</h2>
+
+  <div class="form-grid">
+    <div class="input-group">
+      <label for="montoRetiro">Monto en Bs</label>
+      <input type="number" id="montoRetiro" placeholder="Ej: 10.00" min="1" step="0.01">
+    </div>
+
+    <div class="input-group">
+      <label for="telefonoRetiro">Teléfono pago móvil</label>
+      <input type="text" id="telefonoRetiro" placeholder="Ej: 04141234567">
+    </div>
+
+    <div class="input-group">
+      <label for="cedulaRetiro">Cédula titular</label>
+      <input type="text" id="cedulaRetiro" placeholder="Ej: V-12345678">
+    </div>
+
+    <div class="input-group">
+      <label for="bancoRetiro">Banco</label>
+      <input type="text" id="bancoRetiro" placeholder="Ej: Mercantil">
+    </div>
+  </div>
+
+  <div class="actions">
+    <button class="btn-principal" onclick="solicitarRetiro()">
+      Enviar solicitud
+    </button>
+  </div>
+
+  <p id="mensajeRetiro" class="mensaje-recarga"></p>
+</div>
+
+<div class="card" id="seccionMovimientos" style="display: none;">
+  <h2>📜 Movimientos</h2>
+  <div id="listaMovimientos">Cargando movimientos...</div>
+</div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
@@ -446,6 +504,72 @@
     btn.disabled = false;
     btn.textContent = 'Enviar recarga';
   }
+}
+    function mostrarSeccion(nombre) {
+  document.getElementById('seccionRecarga').style.display = nombre === 'recarga' ? 'block' : 'none';
+  document.getElementById('seccionRetiro').style.display = nombre === 'retiro' ? 'block' : 'none';
+  document.getElementById('seccionMovimientos').style.display = nombre === 'movimientos' ? 'block' : 'none';
+
+  if (nombre === 'movimientos') {
+    cargarMovimientos();
+  }
+}
+    async function cargarMovimientos() {
+  const usuario = requerirSesion();
+  if (!usuario) return;
+
+  const contenedor = document.getElementById('listaMovimientos');
+  contenedor.innerHTML = 'Cargando movimientos...';
+
+  const { data, error } = await supabaseClient
+    .from('billetera_movimientos')
+    .select('*')
+    .eq('usuario_id', usuario.id)
+    .order('creado_en', { ascending: false })
+    .limit(20);
+
+  if (error) {
+    contenedor.innerHTML = 'No se pudieron cargar los movimientos.';
+    return;
+  }
+
+  if (!data || data.length === 0) {
+    contenedor.innerHTML = 'No tienes movimientos todavía.';
+    return;
+  }
+
+  contenedor.innerHTML = data.map(m => `
+    <div style="padding: 14px; border-bottom: 1px solid rgba(255,255,255,0.08);">
+      <div style="font-weight: bold;">${m.tipo.toUpperCase()} - ${Number(m.monto).toFixed(2)} Bs</div>
+      <div style="color: rgba(255,255,255,0.7); font-size: 0.95em;">${m.descripcion || ''}</div>
+      <div style="color: rgba(255,255,255,0.5); font-size: 0.85em;">
+        Saldo: ${Number(m.saldo_anterior).toFixed(2)} → ${Number(m.saldo_nuevo).toFixed(2)} Bs
+      </div>
+    </div>
+  `).join('');
+}
+    
+    async function solicitarRetiro() {
+  const usuario = requerirSesion();
+  if (!usuario) return;
+
+  const monto = parseFloat(document.getElementById('montoRetiro').value);
+  const telefono = document.getElementById('telefonoRetiro').value.trim();
+  const cedula = document.getElementById('cedulaRetiro').value.trim();
+  const banco = document.getElementById('bancoRetiro').value.trim();
+  const mensaje = document.getElementById('mensajeRetiro');
+
+  mensaje.className = 'mensaje-recarga';
+  mensaje.textContent = '';
+
+  if (!monto || monto <= 0 || !telefono || !cedula || !banco) {
+    mensaje.className = 'mensaje-recarga warn';
+    mensaje.textContent = 'Completa todos los campos.';
+    return;
+  }
+
+  mensaje.className = 'mensaje-recarga ok';
+  mensaje.textContent = 'La solicitud de retiro será el siguiente paso del sistema.';
 }
     cargarCuenta();
   </script>
