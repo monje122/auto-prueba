@@ -418,91 +418,66 @@
     }
 
     
-   async function solicitarRecarga() {
+  async function solicitarRetiro() {
   const usuario = requerirSesion();
   if (!usuario) return;
 
-  const monto = parseFloat(document.getElementById('montoRecarga').value);
-  const referencia = document.getElementById('referenciaRecarga').value.trim();
-  const file = document.getElementById('comprobanteRecarga').files[0];
-  const mensaje = document.getElementById('mensajeRecarga');
-  const btn = document.getElementById('btnEnviarRecarga');
+  const monto = parseFloat(document.getElementById('montoRetiro').value);
+  const telefono = document.getElementById('telefonoRetiro').value.trim();
+  const cedula = document.getElementById('cedulaRetiro').value.trim();
+  const banco = document.getElementById('bancoRetiro').value.trim();
+  const mensaje = document.getElementById('mensajeRetiro');
 
+  mensaje.className = 'mensaje-recarga';
   mensaje.textContent = '';
 
-  if (!monto || monto <= 0) {
+  if (!monto || monto <= 0 || !telefono || !cedula || !banco) {
     mensaje.className = 'mensaje-recarga warn';
-    mensaje.textContent= 'Ingresa un monto válido.';
+    mensaje.textContent = 'Completa todos los campos.';
     return;
   }
-
-  if (!/^\d{4}$/.test(referencia)) {
-    mensaje.className = 'mensaje-recarga warn';
-    mensaje.textContent = 'Ingresa los últimos 4 dígitos de la referencia.';
-    return;
-  }
-
-  if (!file) {
-    mensaje.className = 'mensaje-recarga warn';
-    mensaje.textContent = 'Debes subir el comprobante.';
-    return;
-  }
-
-  const tiposPermitidos = ['image/jpeg', 'image/png', 'image/jpg', 'image/webp'];
-  if (!tiposPermitidos.includes(file.type)) {
-    mensaje.textContent = 'Solo se permiten imágenes JPG, PNG o WEBP.';
-    return;
-  }
-
-  if (file.size > 5 * 1024 * 1024) {
-    mensaje.className = 'mensaje-recarga warn';
-    mensaje.textContent = 'El comprobante no puede superar 5MB.';
-    return;
-  }
-
-  btn.disabled = true;
-  btn.textContent = 'Enviando...';
 
   try {
-    const fileExt = (file.name.split('.').pop() || 'jpg').toLowerCase();
-    const fileName = `recarga_${usuario.id}_${Date.now()}.${fileExt}`;
+    const { data: billetera, error: billeteraError } = await supabaseClient
+      .from('billeteras_bingo')
+      .select('saldo')
+      .eq('usuario_id', usuario.id)
+      .maybeSingle();
 
-    const { error: uploadError } = await supabaseClient.storage
-      .from('comprobantes')
-      .upload(fileName, file);
+    if (billeteraError) throw billeteraError;
 
-    if (uploadError) throw uploadError;
+    const saldoActual = Number(billetera?.saldo || 0);
 
-    const { data: publicData } = supabaseClient.storage
-      .from('comprobantes')
-      .getPublicUrl(fileName);
-
-    const comprobanteUrl = publicData.publicUrl;
+    if (saldoActual < monto) {
+      mensaje.className = 'mensaje-recarga warn';
+      mensaje.textContent = `Saldo insuficiente. Disponible: ${saldoActual.toFixed(2)} Bs`;
+      return;
+    }
 
     const { error: insertError } = await supabaseClient
-      .from('recargas_bingo')
+      .from('retiros_bingo')
       .insert([{
         usuario_id: usuario.id,
-        monto: monto,
-        comprobante_url: comprobanteUrl,
-        referencia_pago: referencia,
+        monto,
+        telefono,
+        cedula_titular: cedula,
+        banco,
         estado: 'pendiente'
       }]);
 
     if (insertError) throw insertError;
-    mensaje.className = 'mensaje-recarga warn';
-    mensaje.textContent = '✅ Solicitud de recarga enviada correctamente.';
 
-    document.getElementById('montoRecarga').value = '';
-    document.getElementById('referenciaRecarga').value = '';
-    document.getElementById('comprobanteRecarga').value = '';
+    mensaje.className = 'mensaje-recarga ok';
+    mensaje.textContent = '✅ Solicitud de retiro enviada correctamente.';
+
+    document.getElementById('montoRetiro').value = '';
+    document.getElementById('telefonoRetiro').value = '';
+    document.getElementById('cedulaRetiro').value = '';
+    document.getElementById('bancoRetiro').value = '';
   } catch (error) {
-    console.error('Error enviando recarga:', error);
+    console.error('Error solicitando retiro:', error);
     mensaje.className = 'mensaje-recarga error';
-    mensaje.textContent = '❌ No se pudo enviar la recarga.';
-  } finally {
-    btn.disabled = false;
-    btn.textContent = 'Enviar recarga';
+    mensaje.textContent = '❌ No se pudo enviar la solicitud de retiro.';
   }
 }
     function mostrarSeccion(nombre) {
@@ -549,28 +524,7 @@
   `).join('');
 }
     
-    async function solicitarRetiro() {
-  const usuario = requerirSesion();
-  if (!usuario) return;
-
-  const monto = parseFloat(document.getElementById('montoRetiro').value);
-  const telefono = document.getElementById('telefonoRetiro').value.trim();
-  const cedula = document.getElementById('cedulaRetiro').value.trim();
-  const banco = document.getElementById('bancoRetiro').value.trim();
-  const mensaje = document.getElementById('mensajeRetiro');
-
-  mensaje.className = 'mensaje-recarga';
-  mensaje.textContent = '';
-
-  if (!monto || monto <= 0 || !telefono || !cedula || !banco) {
-    mensaje.className = 'mensaje-recarga warn';
-    mensaje.textContent = 'Completa todos los campos.';
-    return;
-  }
-
-  mensaje.className = 'mensaje-recarga ok';
-  mensaje.textContent = 'La solicitud de retiro será el siguiente paso del sistema.';
-}
+   
     cargarCuenta();
   </script>
 
