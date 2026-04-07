@@ -416,7 +416,94 @@
       const saldo = Number(data?.saldo || 0);
       document.getElementById('saldoUsuario').textContent = `${saldo.toFixed(2)} Bs`;
     }
+async function solicitarRecarga() {
+  const usuario = requerirSesion();
+  if (!usuario) return;
 
+  const monto = parseFloat(document.getElementById('montoRecarga').value);
+  const referencia = document.getElementById('referenciaRecarga').value.trim();
+  const file = document.getElementById('comprobanteRecarga').files[0];
+  const mensaje = document.getElementById('mensajeRecarga');
+  const btn = document.getElementById('btnEnviarRecarga');
+
+  mensaje.className = 'mensaje-recarga';
+  mensaje.textContent = '';
+
+  if (!monto || monto <= 0) {
+    mensaje.className = 'mensaje-recarga warn';
+    mensaje.textContent = 'Ingresa un monto válido.';
+    return;
+  }
+
+  if (!/^\d{4}$/.test(referencia)) {
+    mensaje.className = 'mensaje-recarga warn';
+    mensaje.textContent = 'Ingresa los últimos 4 dígitos de la referencia.';
+    return;
+  }
+
+  if (!file) {
+    mensaje.className = 'mensaje-recarga warn';
+    mensaje.textContent = 'Debes subir el comprobante.';
+    return;
+  }
+
+  const tiposPermitidos = ['image/jpeg', 'image/png', 'image/jpg', 'image/webp'];
+  if (!tiposPermitidos.includes(file.type)) {
+    mensaje.className = 'mensaje-recarga warn';
+    mensaje.textContent = 'Solo se permiten imágenes.';
+    return;
+  }
+
+  if (file.size > 5 * 1024 * 1024) {
+    mensaje.className = 'mensaje-recarga warn';
+    mensaje.textContent = 'El archivo es muy grande.';
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = 'Enviando...';
+
+  try {
+    const fileName = `recarga_${usuario.id}_${Date.now()}`;
+
+    const { error: uploadError } = await supabaseClient.storage
+      .from('comprobantes')
+      .upload(fileName, file);
+
+    if (uploadError) throw uploadError;
+
+    const { data } = supabaseClient.storage
+      .from('comprobantes')
+      .getPublicUrl(fileName);
+
+    const { error: insertError } = await supabaseClient
+      .from('recargas_bingo')
+      .insert([{
+        usuario_id: usuario.id,
+        monto,
+        referencia_pago: referencia,
+        comprobante_url: data.publicUrl,
+        estado: 'pendiente'
+      }]);
+
+    if (insertError) throw insertError;
+
+    mensaje.className = 'mensaje-recarga ok';
+    mensaje.textContent = '✅ Recarga enviada correctamente';
+
+    document.getElementById('montoRecarga').value = '';
+    document.getElementById('referenciaRecarga').value = '';
+    document.getElementById('comprobanteRecarga').value = '';
+
+  } catch (error) {
+    console.error(error);
+    mensaje.className = 'mensaje-recarga error';
+    mensaje.textContent = '❌ Error enviando recarga';
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Enviar recarga';
+  }
+}
     
   async function solicitarRetiro() {
   const usuario = requerirSesion();
