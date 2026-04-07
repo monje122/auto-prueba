@@ -260,6 +260,12 @@
         <h2>COMPRAR CARTONES</h2>
         <p>Elige tus propios cartones del 1 al 1000. Aprovecha nuestras promociones y paga por Pago Móvil. ¡Tú eliges tus números de la suerte!</p>
       </a>
+      <a href="cuenta.html" class="btn-opcion" id="btnBilletera" style="display: none;">
+  <div class="icono">💼</div>
+  <h2>MI BILLETERA</h2>
+  <p>Consulta tu saldo, solicita recargas y administra tu cuenta de juego.</p>
+  <div id="estadoBilletera" class="estado-pendiente" style="display: none;"></div>
+</a>
 
     </div>
 
@@ -385,7 +391,47 @@
       sessionStorage.removeItem('cedulaComprador');
       sessionStorage.removeItem('nombreComprador');
     }
+    function obtenerUsuarioSesion() {
+  try {
+    return JSON.parse(localStorage.getItem('usuario_bingo'));
+  } catch {
+    return null;
+  }
+}
 
+async function actualizarPanelUsuario() {
+  const usuario = obtenerUsuarioSesion();
+  const btnBilletera = document.getElementById('btnBilletera');
+
+  if (!btnBilletera) return;
+
+  if (usuario) {
+    btnBilletera.style.display = 'block';
+
+    const { data, error } = await supabaseClient
+      .from('billeteras_bingo')
+      .select('saldo')
+      .eq('usuario_id', usuario.id)
+      .maybeSingle();
+
+    const estado = document.getElementById('estadoBilletera');
+    if (estado) {
+      estado.style.display = 'block';
+
+      if (error) {
+        estado.textContent = 'No se pudo cargar el saldo';
+        estado.style.color = 'var(--warning)';
+      } else {
+        const saldo = Number(data?.saldo || 0);
+        estado.textContent = `Saldo disponible: ${saldo.toFixed(2)} Bs`;
+        estado.style.color = 'var(--success)';
+      }
+    }
+  } else {
+    btnBilletera.style.display = 'none';
+  }
+}
+    actualizarPanelUsuario();
     verificarEstadoCompra();
   </script>
 
