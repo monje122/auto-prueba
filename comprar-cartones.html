@@ -957,7 +957,7 @@ if (ocupados.length > 0) {
       .from('apartados_temp')
       .update({
         estado: 'aprobado',
-        referencia_pago: `SALDO-${usuario.id}`,
+        referencia_pago: `SALD`,
         aprobado_en: new Date().toISOString()
       })
       .eq('id', miApartadoId);
