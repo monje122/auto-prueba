@@ -1371,11 +1371,11 @@ let temporizadorReinicio = null;
     const columnaCompleta = tieneColumnaCompleta(numeroCarton);
 
     // 1) Si aún no se ha pagado fila y ESTE cartón hizo fila, pagar fila
-    if (!juego.premio_fila_pagado && filaCompleta) {
+    if (!juego.premio_fila_ganador_id && filaCompleta) {
       const { data: actualizado, error: updateError } = await supabaseClient
         .from('bingo_automatico')
         .update({
-          premio_fila_pagado: true,
+          
           premio_fila_ganador_id: Number(numeroCarton),
           premio_fila_ganador_nombre: `${info.nombre} (Cartón #${numeroCarton})`
         })
@@ -1390,17 +1390,23 @@ let temporizadorReinicio = null;
           `${info.nombre} ganó con el cartón #${numeroCarton}`
         );
         await guardarHistorialGanador('fila', numeroCarton);
+await acreditarPremioABilletera({
+  cedula: info.cedula,
+  tipoPremio: 'fila',
+  numeroCarton,
+  juegoId: gameId
+});
       }
 
       return;
     }
 
     // 2) Si aún no se ha pagado columna y ESTE cartón hizo columna, pagar columna
-    if (!juego.premio_columna_pagado && columnaCompleta) {
+    if (!juego.premio_columna_ganador_id && columnaCompleta) {
       const { data: actualizado, error: updateError } = await supabaseClient
         .from('bingo_automatico')
         .update({
-          premio_columna_pagado: true,
+          
           premio_columna_ganador_id: Number(numeroCarton),
           premio_columna_ganador_nombre: `${info.nombre} (Cartón #${numeroCarton})`
         })
@@ -1415,13 +1421,19 @@ let temporizadorReinicio = null;
           `${info.nombre} ganó con el cartón #${numeroCarton}`
         );
         await guardarHistorialGanador('columna', numeroCarton);
+await acreditarPremioABilletera({
+  cedula: info.cedula,
+  tipoPremio: 'columna',
+  numeroCarton,
+  juegoId: gameId
+});
       }
 
       return;
     }
 
     // 3) Solo cuando ya existan ambos premios intermedios, permitir lleno
-    if (juego.premio_fila_pagado && juego.premio_columna_pagado) {
+    if (juego.premio_fila_ganador_id && juego.premio_columna_ganador_id) {
       await verificarCartonLleno(numeroCarton);
     }
   } catch (error) {
@@ -1432,13 +1444,13 @@ let temporizadorReinicio = null;
     async function mostrarPremiosPreviosSiCorresponde(juego, juegoAnterior = null) {
       if (!juego) return;
 
-      const filaCambio = juego.premio_fila_pagado && premiosMostrados.fila !== juego.premio_fila_ganador_id;
+      const filaCambio = juego.premio_fila_ganador_id && premiosMostrados.fila !== juego.premio_fila_ganador_id;
       if (filaCambio) {
         premiosMostrados.fila = juego.premio_fila_ganador_id;
         await mostrarPremioTemporal('🎉 ¡PREMIO POR FILA!', juego.premio_fila_ganador_nombre || `Cartón #${juego.premio_fila_ganador_id}`);
       }
 
-      const columnaCambio = juego.premio_columna_pagado && premiosMostrados.columna !== juego.premio_columna_ganador_id;
+      const columnaCambio = juego.premio_columna_ganador_id && premiosMostrados.columna !== juego.premio_columna_ganador_id;
       if (columnaCambio) {
         premiosMostrados.columna = juego.premio_columna_ganador_id;
         await mostrarPremioTemporal('🎉 ¡PREMIO POR COLUMNA!', juego.premio_columna_ganador_nombre || `Cartón #${juego.premio_columna_ganador_id}`);
@@ -1751,11 +1763,11 @@ function marcarNumeroEnCarton(numeroCarton, numero) {
       try {
         const { data: juego, error } = await supabaseClient
           .from('bingo_automatico')
-          .select('estado, ganador_id, premio_fila_pagado, premio_columna_pagado')
+          .select('estado, ganador_id, premio_fila_ganador_id, premio_columna_ganador_id')
           .eq('id', gameId)
           .single();
 
-        if (error || !juego || juego.ganador_id || !juego.premio_fila_pagado || !juego.premio_columna_pagado) {
+        if (error || !juego || juego.ganador_id || !juego.premio_fila_ganador_id || !juego.premio_columna_ganador_id) {
           isDeclarandoGanador = false;
           return;
         }
@@ -1777,6 +1789,14 @@ function marcarNumeroEnCarton(numeroCarton, numero) {
         if (data && data.length > 0) {
   mostrarGanador(numeroCarton);
           await guardarHistorialGanador('lleno', numeroCarton);
+const info = obtenerInfoCarton(numeroCarton);
+
+await acreditarPremioABilletera({
+  cedula: info.cedula,
+  tipoPremio: 'final',
+  numeroCarton,
+  juegoId: gameId
+});
 
   if (temporizadorReinicio) clearTimeout(temporizadorReinicio);
   temporizadorReinicio = setTimeout(async () => {
@@ -1895,6 +1915,118 @@ function marcarNumeroEnCarton(numeroCarton, numero) {
     }
   } catch (e) {
     console.error('Error guardando historial:', e);
+  }
+}
+    async function obtenerValorConfiguracion(clave, porDefecto = 0) {
+  const { data, error } = await supabaseClient
+    .from('configuracion')
+    .select('valor')
+    .eq('clave', clave)
+    .maybeSingle();
+
+  if (error) {
+    console.error(`Error cargando configuración ${clave}:`, error);
+    return Number(porDefecto);
+  }
+
+  return Number(data?.valor || porDefecto);
+}
+
+async function acreditarPremioABilletera({ cedula, tipoPremio, numeroCarton, juegoId }) {
+  try {
+    const cedulaNormalizada = String(cedula || '').trim();
+    if (!cedulaNormalizada) throw new Error('Cédula no válida');
+
+    const clavePremio =
+      tipoPremio === 'fila'
+        ? 'premio_fila'
+        : tipoPremio === 'columna'
+        ? 'premio_columna'
+        : 'premio_final';
+
+    const campoPagado =
+      tipoPremio === 'fila'
+        ? 'premio_fila_pagado'
+        : tipoPremio === 'columna'
+        ? 'premio_columna_pagado'
+        : 'premio_final_pagado';
+
+    const { data: juego, error: juegoError } = await supabaseClient
+      .from('bingo_automatico')
+      .select(campoPagado)
+      .eq('id', juegoId)
+      .single();
+
+    if (juegoError) throw juegoError;
+
+    if (juego?.[campoPagado]) {
+      console.log(`El premio ${tipoPremio} ya fue pagado`);
+      return { ok: true, duplicado: true };
+    }
+
+    const premio = await obtenerValorConfiguracion(clavePremio, 0);
+    if (!premio || premio <= 0) {
+      throw new Error(`El premio ${tipoPremio} no está configurado`);
+    }
+
+    const { data: usuario, error: usuarioError } = await supabaseClient
+      .from('usuarios_bingo')
+      .select('id, nombre, cedula')
+      .eq('cedula', cedulaNormalizada)
+      .maybeSingle();
+
+    if (usuarioError) throw usuarioError;
+    if (!usuario) throw new Error(`No se encontró usuario para la cédula ${cedulaNormalizada}`);
+
+    const { data: billetera, error: billeteraError } = await supabaseClient
+      .from('billeteras_bingo')
+      .select('*')
+      .eq('usuario_id', usuario.id)
+      .single();
+
+    if (billeteraError) throw billeteraError;
+    if (!billetera) throw new Error('No se encontró la billetera del ganador');
+
+    const saldoAnterior = Number(billetera.saldo || 0);
+    const saldoNuevo = saldoAnterior + premio;
+
+    const { error: updateSaldoError } = await supabaseClient
+      .from('billeteras_bingo')
+      .update({ saldo: saldoNuevo })
+      .eq('usuario_id', usuario.id);
+
+    if (updateSaldoError) throw updateSaldoError;
+
+    const { error: movimientoError } = await supabaseClient
+      .from('billetera_movimientos')
+      .insert([{
+        usuario_id: usuario.id,
+        tipo: 'premio',
+        monto: premio,
+        saldo_anterior: saldoAnterior,
+        saldo_nuevo: saldoNuevo,
+        descripcion: `Premio ${tipoPremio} cartón #${numeroCarton}`,
+        referencia: String(numeroCarton).padStart(4, '0')
+      }]);
+
+    if (movimientoError) throw movimientoError;
+
+    const { error: marcarPagadoError } = await supabaseClient
+      .from('bingo_automatico')
+      .update({ [campoPagado]: true })
+      .eq('id', juegoId);
+
+    if (marcarPagadoError) throw marcarPagadoError;
+
+    return {
+      ok: true,
+      premio,
+      usuario,
+      saldoNuevo
+    };
+  } catch (error) {
+    console.error(`Error acreditando premio ${tipoPremio}:`, error);
+    return { ok: false, error };
   }
 }
     async function reiniciarDespuesDelJuego() {
