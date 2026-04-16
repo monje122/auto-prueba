@@ -865,163 +865,304 @@
     </div>
   `).join('');
 }
-    
-    async function aprobarRetiro(id) {
-  const { data: retiro } = await supabaseClient
-    .from('retiros_bingo')
-    .select('*')
+    async function tomarSolicitudPendiente(tabla, id) {
+  const lockTime = new Date().toISOString();
+
+  const { data, error } = await supabaseClient
+    .from(tabla)
+    .update({ procesado_en: lockTime })
     .eq('id', id)
+    .eq('estado', 'pendiente')
+    .is('procesado_en', null)
+    .select()
     .single();
 
-  if (!retiro) return;
-
-  if (retiro.estado !== 'pendiente') {
-    alert('Ya procesado');
-    return;
+  if (error || !data) {
+    return { ok: false, registro: null, lockTime: null };
   }
 
-  const usuarioId = retiro.usuario_id;
-  const monto = Number(retiro.monto);
+  return { ok: true, registro: data, lockTime };
+}
 
-  const { data: billetera } = await supabaseClient
-    .from('billeteras_bingo')
-    .select('*')
-    .eq('usuario_id', usuarioId)
-    .single();
-
-  const saldoAnterior = Number(billetera.saldo || 0);
-
-  if (saldoAnterior < monto) {
-    alert('Saldo insuficiente en usuario');
-    return;
-  }
-
-  const saldoNuevo = saldoAnterior - monto;
-
-  // actualizar saldo
+async function liberarSolicitud(tabla, id) {
   await supabaseClient
+    .from(tabla)
+    .update({ procesado_en: null })
+    .eq('id', id)
+    .eq('estado', 'pendiente');
+}
+
+async function actualizarSaldoSeguro(usuarioId, saldoAnterior, saldoNuevo) {
+  const { data, error } = await supabaseClient
     .from('billeteras_bingo')
     .update({ saldo: saldoNuevo })
-    .eq('usuario_id', usuarioId);
+    .eq('usuario_id', usuarioId)
+    .eq('saldo', saldoAnterior)
+    .select('usuario_id')
+    .single();
 
-  // registrar movimiento
-  await supabaseClient
-    .from('billetera_movimientos')
-    .insert([{
-      usuario_id: usuarioId,
-      tipo: 'retiro',
-      monto: -monto,
-      saldo_anterior: saldoAnterior,
-      saldo_nuevo: saldoNuevo,
-      descripcion: 'Retiro aprobado'
-    }]);
+  if (error || !data) {
+    throw new Error('No se pudo actualizar el saldo de forma segura.');
+  }
 
-  // marcar retiro
-  await supabaseClient
-    .from('retiros_bingo')
-    .update({
-      estado: 'aprobado',
-      procesado_en: new Date().toISOString()
-    })
-    .eq('id', id);
+  return true;
+}
+   async function aprobarRetiro(id) {
+  let lockTime = null;
+  let usuarioId = null;
+  let saldoAnterior = null;
+  let saldoNuevo = null;
+  let movimientoId = null;
 
-  alert('Retiro aprobado');
-  cargarRetirosPendientes();
+  try {
+    const lock = await tomarSolicitudPendiente('retiros_bingo', id);
+
+    if (!lock.ok) {
+      alert('Este retiro ya fue procesado o está siendo procesado.');
+      return;
+    }
+
+    lockTime = lock.lockTime;
+    const retiro = lock.registro;
+
+    usuarioId = retiro.usuario_id;
+    const monto = Number(retiro.monto || 0);
+
+    if (!Number.isFinite(monto) || monto <= 0) {
+      throw new Error('Monto de retiro inválido.');
+    }
+
+    const { data: billetera, error: billeteraError } = await supabaseClient
+      .from('billeteras_bingo')
+      .select('saldo')
+      .eq('usuario_id', usuarioId)
+      .single();
+
+    if (billeteraError || !billetera) {
+      throw new Error('No se pudo leer la billetera del usuario.');
+    }
+
+    saldoAnterior = Number(billetera.saldo || 0);
+
+    if (saldoAnterior < monto) {
+      await liberarSolicitud('retiros_bingo', id);
+      alert('Saldo insuficiente en el usuario.');
+      return;
+    }
+
+    saldoNuevo = saldoAnterior - monto;
+
+    await actualizarSaldoSeguro(usuarioId, saldoAnterior, saldoNuevo);
+
+    const { data: movimiento, error: movimientoError } = await supabaseClient
+      .from('billetera_movimientos')
+      .insert([{
+        usuario_id: usuarioId,
+        tipo: 'retiro',
+        monto: -monto,
+        saldo_anterior: saldoAnterior,
+        saldo_nuevo: saldoNuevo,
+        descripcion: `Retiro aprobado #${id}`,
+        referencia: `retiro-${id}`
+      }])
+      .select('id')
+      .single();
+
+    if (movimientoError) {
+      throw new Error('No se pudo registrar el movimiento del retiro.');
+    }
+
+    movimientoId = movimiento?.id || null;
+
+    const { error: aprobarError } = await supabaseClient
+      .from('retiros_bingo')
+      .update({
+        estado: 'aprobado',
+        procesado_en: lockTime
+      })
+      .eq('id', id)
+      .eq('estado', 'pendiente');
+
+    if (aprobarError) {
+      throw new Error('No se pudo marcar el retiro como aprobado.');
+    }
+
+    alert('Retiro aprobado.');
+    await cargarRetirosPendientes();
+  } catch (error) {
+    console.error('Error aprobando retiro:', error);
+
+    if (usuarioId !== null && saldoAnterior !== null && saldoNuevo !== null) {
+      await supabaseClient
+        .from('billeteras_bingo')
+        .update({ saldo: saldoAnterior })
+        .eq('usuario_id', usuarioId)
+        .eq('saldo', saldoNuevo);
+    }
+
+    if (movimientoId) {
+      await supabaseClient
+        .from('billetera_movimientos')
+        .delete()
+        .eq('id', movimientoId);
+    }
+
+    await liberarSolicitud('retiros_bingo', id);
+
+    alert('No se pudo aprobar el retiro. Se revirtió el proceso.');
+  }
 }
     
-    async function rechazarRetiro(id) {
-  await supabaseClient
+   async function rechazarRetiro(id) {
+  const { data, error } = await supabaseClient
     .from('retiros_bingo')
     .update({
       estado: 'rechazado',
       procesado_en: new Date().toISOString()
     })
-    .eq('id', id);
+    .eq('id', id)
+    .eq('estado', 'pendiente')
+    .is('procesado_en', null)
+    .select('id');
 
-  alert('Retiro rechazado');
-  cargarRetirosPendientes();
+  if (error) {
+    console.error('Error rechazando retiro:', error);
+    alert('No se pudo rechazar el retiro.');
+    return;
+  }
+
+  if (!data || data.length === 0) {
+    alert('Este retiro ya fue procesado.');
+    return;
+  }
+
+  alert('Retiro rechazado.');
+  await cargarRetirosPendientes();
 }
     
-    async function aprobarRecarga(recargaId) {
+  async function aprobarRecarga(recargaId) {
+  let lockTime = null;
+  let usuarioId = null;
+  let saldoAnterior = null;
+  let saldoNuevo = null;
+  let movimientoId = null;
 
-  // 1. obtener recarga
-  const { data: recarga, error } = await supabaseClient
-    .from('recargas_bingo')
-    .select('*')
-    .eq('id', recargaId)
-    .single();
+  try {
+    const lock = await tomarSolicitudPendiente('recargas_bingo', recargaId);
 
-  if (error || !recarga) {
-    alert('Error obteniendo recarga');
-    return;
+    if (!lock.ok) {
+      alert('Esta recarga ya fue procesada o está siendo procesada.');
+      return;
+    }
+
+    lockTime = lock.lockTime;
+    const recarga = lock.registro;
+
+    usuarioId = recarga.usuario_id;
+    const monto = Number(recarga.monto || 0);
+
+    if (!Number.isFinite(monto) || monto <= 0) {
+      throw new Error('Monto de recarga inválido.');
+    }
+
+    const { data: billetera, error: billeteraError } = await supabaseClient
+      .from('billeteras_bingo')
+      .select('saldo')
+      .eq('usuario_id', usuarioId)
+      .single();
+
+    if (billeteraError || !billetera) {
+      throw new Error('No se pudo leer la billetera del usuario.');
+    }
+
+    saldoAnterior = Number(billetera.saldo || 0);
+    saldoNuevo = saldoAnterior + monto;
+
+    await actualizarSaldoSeguro(usuarioId, saldoAnterior, saldoNuevo);
+
+    const { data: movimiento, error: movimientoError } = await supabaseClient
+      .from('billetera_movimientos')
+      .insert([{
+        usuario_id: usuarioId,
+        tipo: 'recarga',
+        monto: monto,
+        saldo_anterior: saldoAnterior,
+        saldo_nuevo: saldoNuevo,
+        descripcion: `Recarga aprobada #${recargaId}`,
+        referencia: recarga.referencia_pago || String(recargaId)
+      }])
+      .select('id')
+      .single();
+
+    if (movimientoError) {
+      throw new Error('No se pudo registrar el movimiento de recarga.');
+    }
+
+    movimientoId = movimiento?.id || null;
+
+    const { error: aprobarError } = await supabaseClient
+      .from('recargas_bingo')
+      .update({
+        estado: 'aprobado',
+        procesado_en: lockTime
+      })
+      .eq('id', recargaId)
+      .eq('estado', 'pendiente');
+
+    if (aprobarError) {
+      throw new Error('No se pudo marcar la recarga como aprobada.');
+    }
+
+    alert('Recarga aprobada correctamente.');
+    await cargarRecargasPendientes();
+  } catch (error) {
+    console.error('Error aprobando recarga:', error);
+
+    if (usuarioId !== null && saldoAnterior !== null && saldoNuevo !== null) {
+      await supabaseClient
+        .from('billeteras_bingo')
+        .update({ saldo: saldoAnterior })
+        .eq('usuario_id', usuarioId)
+        .eq('saldo', saldoNuevo);
+    }
+
+    if (movimientoId) {
+      await supabaseClient
+        .from('billetera_movimientos')
+        .delete()
+        .eq('id', movimientoId);
+    }
+
+    await liberarSolicitud('recargas_bingo', recargaId);
+
+    alert('No se pudo aprobar la recarga. Se revirtió el proceso.');
   }
-
-  if (recarga.estado !== 'pendiente') {
-    alert('Esta recarga ya fue procesada');
-    return;
-  }
-
-  const usuarioId = recarga.usuario_id;
-  const monto = Number(recarga.monto);
-
-  // 2. obtener saldo actual
-  const { data: billetera } = await supabaseClient
-    .from('billeteras_bingo')
-    .select('*')
-    .eq('usuario_id', usuarioId)
-    .single();
-
-  const saldoAnterior = Number(billetera?.saldo || 0);
-  const saldoNuevo = saldoAnterior + monto;
-
-  // 3. actualizar saldo
-  const { error: errorSaldo } = await supabaseClient
-    .from('billeteras_bingo')
-    .update({ saldo: saldoNuevo })
-    .eq('usuario_id', usuarioId);
-
-  if (errorSaldo) {
-    alert('Error actualizando saldo');
-    return;
-  }
-
-  // 4. registrar movimiento
-  await supabaseClient
-    .from('billetera_movimientos')
-    .insert([{
-      usuario_id: usuarioId,
-      tipo: 'recarga',
-      monto: monto,
-      saldo_anterior: saldoAnterior,
-      saldo_nuevo: saldoNuevo,
-      descripcion: 'Recarga aprobada',
-      referencia: recarga.referencia_pago
-    }]);
-
-  // 5. marcar como aprobada
-  await supabaseClient
-    .from('recargas_bingo')
-    .update({
-      estado: 'aprobado',
-      procesado_en: new Date().toISOString()
-    })
-    .eq('id', recargaId);
-
-  alert('Recarga aprobada correctamente');
-
-  cargarRecargasPendientes();
 }
     async function rechazarRecarga(recargaId) {
-  await supabaseClient
+  const { data, error } = await supabaseClient
     .from('recargas_bingo')
     .update({
       estado: 'rechazado',
       procesado_en: new Date().toISOString()
     })
-    .eq('id', recargaId);
+    .eq('id', recargaId)
+    .eq('estado', 'pendiente')
+    .is('procesado_en', null)
+    .select('id');
 
-  alert('Recarga rechazada');
-  cargarRecargasPendientes();
+  if (error) {
+    console.error('Error rechazando recarga:', error);
+    alert('No se pudo rechazar la recarga.');
+    return;
+  }
+
+  if (!data || data.length === 0) {
+    alert('Esta recarga ya fue procesada.');
+    return;
+  }
+
+  alert('Recarga rechazada.');
+  await cargarRecargasPendientes();
 }
 
     function login() {
