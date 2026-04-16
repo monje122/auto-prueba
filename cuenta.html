@@ -416,47 +416,64 @@
       const saldo = Number(data?.saldo || 0);
       document.getElementById('saldoUsuario').textContent = `${saldo.toFixed(2)} Bs`;
     }
+    function limpiarSoloDigitos(valor = '') {
+  return String(valor).replace(/\D/g, '');
+}
+
+function normalizarCedulaSimple(valor = '') {
+  const limpio = String(valor).trim().toUpperCase().replace(/\s+/g, '');
+  const prefijo = /^[VEJPG]-?/i.test(limpio) ? limpio[0].toUpperCase() : '';
+  const digitos = limpiarSoloDigitos(limpio);
+
+  if (!digitos) return '';
+  return prefijo ? `${prefijo}-${digitos}` : digitos;
+}
+
+function normalizarTelefono(valor = '') {
+  return limpiarSoloDigitos(valor);
+}
+
+function setMensaje(id, tipo, texto) {
+  const el = document.getElementById(id);
+  el.className = 'mensaje-recarga';
+  if (tipo) el.classList.add(tipo);
+  el.textContent = texto;
+}
+    
 async function solicitarRecarga() {
   const usuario = requerirSesion();
   if (!usuario) return;
 
-  const monto = parseFloat(document.getElementById('montoRecarga').value);
-  const referencia = document.getElementById('referenciaRecarga').value.trim();
+  const monto = Number(document.getElementById('montoRecarga').value);
+  const referencia = limpiarSoloDigitos(document.getElementById('referenciaRecarga').value).slice(-4);
   const file = document.getElementById('comprobanteRecarga').files[0];
-  const mensaje = document.getElementById('mensajeRecarga');
   const btn = document.getElementById('btnEnviarRecarga');
 
-  mensaje.className = 'mensaje-recarga';
-  mensaje.textContent = '';
+  setMensaje('mensajeRecarga', '', '');
 
-  if (!monto || monto <= 0) {
-    mensaje.className = 'mensaje-recarga warn';
-    mensaje.textContent = 'Ingresa un monto válido.';
+  if (!Number.isFinite(monto) || monto <= 0) {
+    setMensaje('mensajeRecarga', 'warn', 'Ingresa un monto válido.');
     return;
   }
 
   if (!/^\d{4}$/.test(referencia)) {
-    mensaje.className = 'mensaje-recarga warn';
-    mensaje.textContent = 'Ingresa los últimos 4 dígitos de la referencia.';
+    setMensaje('mensajeRecarga', 'warn', 'Ingresa exactamente los últimos 4 dígitos de la referencia.');
     return;
   }
 
   if (!file) {
-    mensaje.className = 'mensaje-recarga warn';
-    mensaje.textContent = 'Debes subir el comprobante.';
+    setMensaje('mensajeRecarga', 'warn', 'Debes subir el comprobante.');
     return;
   }
 
   const tiposPermitidos = ['image/jpeg', 'image/png', 'image/jpg', 'image/webp'];
   if (!tiposPermitidos.includes(file.type)) {
-    mensaje.className = 'mensaje-recarga warn';
-    mensaje.textContent = 'Solo se permiten imágenes.';
+    setMensaje('mensajeRecarga', 'warn', 'Solo se permiten imágenes JPG, PNG o WEBP.');
     return;
   }
 
   if (file.size > 5 * 1024 * 1024) {
-    mensaje.className = 'mensaje-recarga warn';
-    mensaje.textContent = 'El archivo es muy grande.';
+    setMensaje('mensajeRecarga', 'warn', 'El archivo supera el máximo de 5 MB.');
     return;
   }
 
@@ -464,15 +481,33 @@ async function solicitarRecarga() {
   btn.textContent = 'Enviando...';
 
   try {
-    const fileName = `recarga_${usuario.id}_${Date.now()}`;
+    const { data: duplicada, error: errorDuplicada } = await supabaseClient
+      .from('recargas_bingo')
+      .select('id')
+      .eq('usuario_id', usuario.id)
+      .eq('referencia_pago', referencia)
+      .eq('estado', 'pendiente')
+      .maybeSingle();
+
+    if (errorDuplicada) throw errorDuplicada;
+    if (duplicada) {
+      setMensaje('mensajeRecarga', 'warn', 'Ya tienes una recarga pendiente con esa referencia.');
+      return;
+    }
+
+    const extension = (file.name.split('.').pop() || 'jpg').toLowerCase();
+    const fileName = `recarga_${usuario.id}_${Date.now()}.${extension}`;
 
     const { error: uploadError } = await supabaseClient.storage
       .from('comprobantes')
-      .upload(fileName, file);
+      .upload(fileName, file, {
+        upsert: false,
+        contentType: file.type
+      });
 
     if (uploadError) throw uploadError;
 
-    const { data } = supabaseClient.storage
+    const { data: publicData } = supabaseClient.storage
       .from('comprobantes')
       .getPublicUrl(fileName);
 
@@ -482,23 +517,20 @@ async function solicitarRecarga() {
         usuario_id: usuario.id,
         monto,
         referencia_pago: referencia,
-        comprobante_url: data.publicUrl,
+        comprobante_url: publicData.publicUrl,
         estado: 'pendiente'
       }]);
 
     if (insertError) throw insertError;
 
-    mensaje.className = 'mensaje-recarga ok';
-    mensaje.textContent = '✅ Recarga enviada correctamente';
+    setMensaje('mensajeRecarga', 'ok', '✅ Recarga enviada correctamente.');
 
     document.getElementById('montoRecarga').value = '';
     document.getElementById('referenciaRecarga').value = '';
     document.getElementById('comprobanteRecarga').value = '';
-
   } catch (error) {
-    console.error(error);
-    mensaje.className = 'mensaje-recarga error';
-    mensaje.textContent = '❌ Error enviando recarga';
+    console.error('Error solicitando recarga:', error);
+    setMensaje('mensajeRecarga', 'error', '❌ No se pudo enviar la recarga.');
   } finally {
     btn.disabled = false;
     btn.textContent = 'Enviar recarga';
@@ -509,18 +541,30 @@ async function solicitarRecarga() {
   const usuario = requerirSesion();
   if (!usuario) return;
 
-  const monto = parseFloat(document.getElementById('montoRetiro').value);
-  const telefono = document.getElementById('telefonoRetiro').value.trim();
-  const cedula = document.getElementById('cedulaRetiro').value.trim();
+  const monto = Number(document.getElementById('montoRetiro').value);
+  const telefono = normalizarTelefono(document.getElementById('telefonoRetiro').value);
+  const cedula = normalizarCedulaSimple(document.getElementById('cedulaRetiro').value);
   const banco = document.getElementById('bancoRetiro').value.trim();
-  const mensaje = document.getElementById('mensajeRetiro');
 
-  mensaje.className = 'mensaje-recarga';
-  mensaje.textContent = '';
+  setMensaje('mensajeRetiro', '', '');
 
-  if (!monto || monto <= 0 || !telefono || !cedula || !banco) {
-    mensaje.className = 'mensaje-recarga warn';
-    mensaje.textContent = 'Completa todos los campos.';
+  if (!Number.isFinite(monto) || monto <= 0) {
+    setMensaje('mensajeRetiro', 'warn', 'Ingresa un monto válido.');
+    return;
+  }
+
+  if (!/^\d{10,11}$/.test(telefono)) {
+    setMensaje('mensajeRetiro', 'warn', 'Ingresa un teléfono válido de 10 u 11 dígitos.');
+    return;
+  }
+
+  if (!cedula || limpiarSoloDigitos(cedula).length < 6) {
+    setMensaje('mensajeRetiro', 'warn', 'Ingresa una cédula válida.');
+    return;
+  }
+
+  if (banco.length < 3) {
+    setMensaje('mensajeRetiro', 'warn', 'Ingresa un banco válido.');
     return;
   }
 
@@ -535,9 +579,23 @@ async function solicitarRecarga() {
 
     const saldoActual = Number(billetera?.saldo || 0);
 
-    if (saldoActual < monto) {
-      mensaje.className = 'mensaje-recarga warn';
-      mensaje.textContent = `Saldo insuficiente. Disponible: ${saldoActual.toFixed(2)} Bs`;
+    const { data: pendientes, error: pendientesError } = await supabaseClient
+      .from('retiros_bingo')
+      .select('monto')
+      .eq('usuario_id', usuario.id)
+      .eq('estado', 'pendiente');
+
+    if (pendientesError) throw pendientesError;
+
+    const montoPendiente = (pendientes || []).reduce((acc, item) => acc + Number(item.monto || 0), 0);
+    const saldoDisponibleReal = saldoActual - montoPendiente;
+
+    if (saldoDisponibleReal < monto) {
+      setMensaje(
+        'mensajeRetiro',
+        'warn',
+        `Saldo insuficiente. Disponible para retirar: ${saldoDisponibleReal.toFixed(2)} Bs`
+      );
       return;
     }
 
@@ -554,8 +612,7 @@ async function solicitarRecarga() {
 
     if (insertError) throw insertError;
 
-    mensaje.className = 'mensaje-recarga ok';
-    mensaje.textContent = '✅ Solicitud de retiro enviada correctamente.';
+    setMensaje('mensajeRetiro', 'ok', '✅ Solicitud de retiro enviada correctamente.');
 
     document.getElementById('montoRetiro').value = '';
     document.getElementById('telefonoRetiro').value = '';
@@ -563,8 +620,7 @@ async function solicitarRecarga() {
     document.getElementById('bancoRetiro').value = '';
   } catch (error) {
     console.error('Error solicitando retiro:', error);
-    mensaje.className = 'mensaje-recarga error';
-    mensaje.textContent = '❌ No se pudo enviar la solicitud de retiro.';
+    setMensaje('mensajeRetiro', 'error', '❌ No se pudo enviar la solicitud de retiro.');
   }
 }
     function mostrarSeccion(nombre) {
