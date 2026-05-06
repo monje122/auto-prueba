@@ -623,11 +623,176 @@
     }
 
     @media (max-width: 768px) {
-      .header h1 { font-size: 1.8em; }
-      .cartones-grid { grid-template-columns: repeat(auto-fill, minmax(60px, 1fr)); }
-      .carton-item { font-size: 1em; }
-      .promo-card { padding: 20px; }
-    }
+  .container {
+    padding: 12px;
+  }
+
+  .header {
+    padding: 22px 14px;
+    border-radius: 16px;
+    margin-bottom: 18px;
+  }
+
+  .header h1 {
+    font-size: 1.45em;
+    line-height: 1.2;
+  }
+
+  .header p {
+    font-size: 0.95em;
+  }
+
+  .steps-container {
+    gap: 8px;
+    margin-bottom: 20px;
+  }
+
+  .step {
+    padding: 10px 12px;
+    font-size: 0.82em;
+    border-radius: 14px;
+  }
+
+  .step-number {
+    width: 28px;
+    height: 28px;
+  }
+
+  .section {
+    padding: 22px 14px;
+    border-radius: 18px;
+  }
+
+  .section h2 {
+    font-size: 1.25em;
+    line-height: 1.3;
+  }
+
+  .form-grid {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+
+  .input-group input {
+    padding: 15px;
+    font-size: 1em;
+  }
+
+  .promos-container {
+    grid-template-columns: 1fr;
+    gap: 14px;
+  }
+
+  .promo-card {
+    padding: 20px 16px;
+  }
+
+  .promo-precio {
+    font-size: 2em;
+  }
+
+  .selector-cantidad {
+    padding: 20px 12px;
+  }
+
+  .cantidad-control {
+    gap: 12px;
+  }
+
+  .btn-cantidad {
+    width: 52px;
+    height: 52px;
+  }
+
+  #cantidadInput {
+    width: 90px;
+    font-size: 1.6em;
+  }
+
+  .cartones-grid {
+    grid-template-columns: repeat(5, 1fr);
+    gap: 8px;
+    padding: 10px;
+    max-height: 55vh;
+  }
+
+  .carton-item {
+    min-height: 52px;
+    font-size: 0.95em;
+    border-radius: 10px;
+  }
+
+  .seleccion-info {
+    padding: 16px;
+    display: block;
+    text-align: center;
+  }
+
+  .seleccion-stats {
+    justify-content: center;
+    gap: 18px;
+    margin-bottom: 18px;
+  }
+
+  .stat-value {
+    font-size: 1.45em;
+  }
+
+  .btn-principal,
+  .btn-secundario {
+    width: 100%;
+    padding: 16px 18px;
+    font-size: 0.95em;
+    margin-top: 10px;
+  }
+
+  .pago-info,
+  .pago-datos {
+    width: 100%;
+    padding: 18px 14px;
+  }
+
+  .pago-datos strong {
+    width: auto;
+    display: block;
+    margin-bottom: 4px;
+  }
+
+  .file-label {
+    width: 100%;
+    padding: 18px;
+    text-align: center;
+  }
+
+  #previewComprobante img {
+    max-width: 100% !important;
+  }
+
+  .apartado-banner {
+    top: auto;
+    right: 12px;
+    left: 12px;
+    bottom: 12px;
+    text-align: center;
+  }
+
+  .carton-preview-dialog {
+    width: 96vw;
+    padding: 18px 12px;
+    border-radius: 18px;
+  }
+
+  .carton-preview-grid {
+    gap: 6px;
+    padding: 10px;
+  }
+
+  .carton-preview-cell {
+    min-height: 42px;
+    font-size: 0.9em;
+    border-radius: 8px;
+  }
+}
   </style>
 <base target="_blank">
 </head>
