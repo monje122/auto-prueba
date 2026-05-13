@@ -491,6 +491,24 @@
   transform: translateY(-2px);
   filter: brightness(1.1);
 }
+    /* RETIROS */
+
+#listaRetiros {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 18px;
+  margin-top: 20px;
+}
+
+#listaRetiros .card-recarga {
+  background: linear-gradient(145deg, #1a2238, #0f1728);
+  border: 1px solid rgba(52,152,219,0.35);
+  border-left: 5px solid var(--info);
+}
+
+#listaRetiros .card-recarga strong {
+  color: #6ec6ff;
+}
   </style>
 </head>
 <body>
