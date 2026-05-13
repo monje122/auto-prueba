@@ -425,6 +425,72 @@
       .sidebar { width: 100%; position: relative; height: auto; }
       .main-content { margin-left: 0; }
     }
+    #listaRecargas {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 18px;
+  margin-top: 20px;
+}
+
+.card-recarga {
+  background: linear-gradient(145deg, #1f1f35, #11111f);
+  border: 1px solid rgba(255,165,0,0.28);
+  border-left: 5px solid var(--primary);
+  border-radius: 18px;
+  padding: 20px;
+  box-shadow: 0 12px 30px rgba(0,0,0,0.35);
+}
+
+.card-recarga p {
+  margin: 7px 0;
+  color: rgba(255,255,255,0.85);
+}
+
+.card-recarga strong {
+  color: var(--secondary);
+  font-size: 1.15em;
+}
+
+.card-recarga a {
+  display: inline-block;
+  margin: 12px 0;
+  color: var(--info);
+  font-weight: bold;
+  text-decoration: none;
+}
+
+.card-recarga a:hover {
+  text-decoration: underline;
+}
+
+.acciones {
+  display: flex;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.acciones button {
+  flex: 1;
+  border: none;
+  padding: 10px;
+  border-radius: 10px;
+  color: white;
+  font-weight: bold;
+  cursor: pointer;
+}
+
+.acciones button:first-child {
+  background: var(--success);
+}
+
+.acciones button:last-child {
+  background: var(--danger);
+}
+
+.acciones button:hover {
+  transform: translateY(-2px);
+  filter: brightness(1.1);
+}
   </style>
 </head>
 <body>
